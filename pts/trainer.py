@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from opt_list import torch_opt_list
 
 from torch.utils.data import DataLoader
 
@@ -32,9 +33,12 @@ class Trainer:
     def __call__(
         self, net: nn.Module, input_names: List[str], data_loader: DataLoader
     ) -> None:
-        optimizer = torch.optim.Adam(
-            net.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
-        )
+        optimizer = torch_opt_list.optimizer_for_idx(net.parameters(), idx=0,
+                                       training_steps=self.num_batches_per_epoch*self.epochs)
+
+        # optimizer = torch.optim.Adam(
+        #     net.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
+        # )
 
         writer = SummaryWriter()
         #writer.add_graph(net)

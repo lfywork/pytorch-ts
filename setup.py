@@ -27,7 +27,7 @@ setup(
         'python-rapidjson',
         'tensorboard',
     ],
-
+    dependency_links = ['https://github.com/google-research/google-research.git#subdirectory=opt_list'],
     test_suite='tests',
     tests_require = [
         'flake8',
