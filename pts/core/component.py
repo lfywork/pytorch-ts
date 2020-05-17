@@ -1,3 +1,17 @@
+# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License").
+# You may not use this file except in compliance with the License.
+# A copy of the License is located at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# or in the "license" file accompanying this file. This file is distributed
+# on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+# express or implied. See the License for the specific language governing
+# permissions and limitations under the License.
+
+
 import functools
 import inspect
 from collections import OrderedDict
@@ -95,26 +109,22 @@ def validated(base_model=None):
                 param.annotation
                 if param.annotation != inspect.Parameter.empty
                 else Any,
-                param.default
-                if param.default != inspect.Parameter.empty
-                else ...,
+                param.default if param.default != inspect.Parameter.empty else ...,
             )
             for param in init_params.values()
             if param.name != "self"
-               and param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+            and param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
         }
 
         if base_model is None:
             PydanticModel = create_model(
-                model_name=f"{init_clsnme}Model",
+                f"{init_clsnme}Model",
                 __config__=BaseValidatedInitializerModel.Config,
                 **init_fields,
             )
         else:
             PydanticModel = create_model(
-                model_name=f"{init_clsnme}Model",
-                __base__=base_model,
-                **init_fields,
+                f"{init_clsnme}Model", __base__=base_model, **init_fields,
             )
 
         def validated_repr(self) -> str:
@@ -129,9 +139,7 @@ def validated(base_model=None):
 
             nmargs = {
                 name: arg
-                for (name, param), arg in zip(
-                    list(init_params.items()), [self] + args
-                )
+                for (name, param), arg in zip(list(init_params.items()), [self] + args)
                 if name != "self"
             }
             model = PydanticModel(**{**nmargs, **kwargs})

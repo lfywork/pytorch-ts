@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC, abstractclassmethod
 from typing import Callable, Dict, Optional, Tuple
 
 import numpy as np
@@ -11,6 +11,8 @@ from torch.distributions import (
     NegativeBinomial,
     StudentT,
     Normal,
+    Categorical,
+    MixtureSameFamily,
     Independent,
     LowRankMultivariateNormal,
     MultivariateNormal,
@@ -68,8 +70,8 @@ class Output(ABC):
             dtype=self.dtype,
         )
 
-    @abstractmethod
-    def domain_map(self, *args: torch.Tensor):
+    @abstractclassmethod
+    def domain_map(cls, *args: torch.Tensor):
         pass
 
 
@@ -85,10 +87,10 @@ class DistributionOutput(Output, ABC):
         self, distr_args, scale: Optional[torch.Tensor] = None
     ) -> Distribution:
 
+        distr = self.distr_cls(*distr_args)
         if scale is None:
-            return self.distr_cls(*distr_args)
+            return distr
         else:
-            distr = self.distr_cls(*distr_args)
             return TransformedDistribution(distr, [AffineTransform(loc=0, scale=scale)])
 
 
@@ -97,10 +99,10 @@ class NormalOutput(DistributionOutput):
     distr_cls: type = Normal
 
     @classmethod
-    def domain_map(self, loc, scale):
+    def domain_map(cls, loc, scale):
         scale = F.softplus(scale)
         return loc.squeeze(-1), scale.squeeze(-1)
-    
+
     @property
     def event_shape(self) -> Tuple:
         return ()
@@ -137,7 +139,8 @@ class NegativeBinomialOutput(DistributionOutput):
 
         if scale is not None:
             mu *= scale
-            alpha /= scale
+            # alpha = alpha + (scale - 1) / (scale * mu) # multiply 2nd moment by scale
+            alpha += (scale - 1) / mu
 
         n = 1.0 / alpha
         p = mu * alpha / (1.0 + mu * alpha)
@@ -164,8 +167,80 @@ class StudentTOutput(DistributionOutput):
         return ()
 
 
-class LowRankMultivariateNormalOutput(DistributionOutput):
+class StudentTMixtureOutput(DistributionOutput):
+    def __init__(self, components: int = 1) -> None:
+        self.components = components
+        self.args_dim = {
+            "mix_logits": components,
+            "df": components,
+            "loc": components,
+            "scale": components,
+        }
 
+    @classmethod
+    def domain_map(cls, mix_logits, df, loc, scale):
+        scale = F.softplus(scale)
+        df = 2.0 + F.softplus(df)
+        return (
+            mix_logits.squeeze(-1),
+            df.squeeze(-1),
+            loc.squeeze(-1),
+            scale.squeeze(-1),
+        )
+
+    def distribution(
+        self, distr_args, scale: Optional[torch.Tensor] = None
+    ) -> Distribution:
+        mix_logits, df, loc, scale = distr_args
+
+        comp_distr = StudentT(df, loc, scale)
+        if scale is None:
+            return MixtureSameFamily(Categorical(logits=mix_logits), comp_distr)
+        else:
+            scaled_comp_distr = TransformedDistribution(
+                comp_distr, [AffineTransform(loc=0, scale=scale)]
+            )
+            return MixtureSameFamily(Categorical(logits=mix_logits), scaled_comp_distr)
+
+    @property
+    def event_shape(self) -> Tuple:
+        return ()
+
+
+class NormalMixtureOutput(DistributionOutput):
+    def __init__(self, components: int = 1) -> None:
+        self.components = components
+        self.args_dim = {
+            "mix_logits": components,
+            "loc": components,
+            "scale": components,
+        }
+
+    @classmethod
+    def domain_map(cls, mix_logits, loc, scale):
+        scale = F.softplus(scale)
+        return mix_logits.squeeze(-1), loc.squeeze(-1), scale.squeeze(-1)
+
+    def distribution(
+        self, distr_args, scale: Optional[torch.Tensor] = None
+    ) -> Distribution:
+        mix_logits, loc, scale = distr_args
+
+        comp_distr = Normal(loc, scale)
+        if scale is None:
+            return MixtureSameFamily(Categorical(logits=mix_logits), comp_distr)
+        else:
+            scaled_comp_distr = TransformedDistribution(
+                comp_distr, [AffineTransform(loc=0, scale=scale)]
+            )
+            return MixtureSameFamily(Categorical(logits=mix_logits), scaled_comp_distr)
+
+    @property
+    def event_shape(self) -> Tuple:
+        return ()
+
+
+class LowRankMultivariateNormalOutput(DistributionOutput):
     def __init__(
         self, dim: int, rank: int, sigma_init: float = 1.0, sigma_minimum: float = 1e-3,
     ) -> None:
@@ -199,12 +274,12 @@ class LowRankMultivariateNormalOutput(DistributionOutput):
 
 
 class IndependentNormalOutput(DistributionOutput):
-
     def __init__(self, dim: int) -> None:
         self.dim = dim
         self.args_dim = {"loc": self.dim, "scale": self.dim}
 
-    def domain_map(self, loc, scale):
+    @classmethod
+    def domain_map(cls, loc, scale):
         return loc, F.softplus(scale)
 
     @property
@@ -223,7 +298,6 @@ class IndependentNormalOutput(DistributionOutput):
 
 
 class MultivariateNormalOutput(DistributionOutput):
-
     def __init__(self, dim: int) -> None:
         self.args_dim = {"loc": dim, "scale_tril": dim * dim}
         self.dim = dim
@@ -255,31 +329,29 @@ class MultivariateNormalOutput(DistributionOutput):
         else:
             return TransformedDistribution(distr, [AffineTransform(loc=0, scale=scale)])
 
-
     @property
     def event_shape(self) -> Tuple:
         return (self.dim,)
 
 
 class FlowOutput(DistributionOutput):
-
     def __init__(self, flow, input_size, cond_size):
         self.args_dim = {"cond": cond_size}
         self.flow = flow
         self.dim = input_size
-    
-    def domain_map(self, cond):
+
+    @classmethod
+    def domain_map(cls, cond):
         return (cond,)
 
     def distribution(self, distr_args, scale=None):
-        cond, = distr_args
+        (cond,) = distr_args
         if scale is not None:
             self.flow.scale = scale
         self.flow.cond = cond
-    
+
         return self.flow
 
     @property
     def event_shape(self) -> Tuple:
         return (self.dim,)
-

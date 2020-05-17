@@ -1,6 +1,6 @@
 # PyTorchTS
 
-PyTorchTS is a [PyTorch](https://github.com/pytorch/pytorch) Probabilistic Time Series forecasting framework which provides state of the art PyTorch time series models  and utilities [GluonTS](https://github.com/awslabs/gluon-ts) for loading, transforming and back-testing time series data sets.
+PyTorchTS is a [PyTorch](https://github.com/pytorch/pytorch) Probabilistic Time Series forecasting framework which provides state of the art PyTorch time series models by utilizing [GluonTS](https://github.com/awslabs/gluon-ts) as its API (with minimal changes) and for loading, transforming and back-testing time series data sets. Currently the GluonTS code is copied into this repository with changes for PyTorch but eventually GluonTS should become an external requirement.
 
 ## Installation
 
@@ -9,6 +9,8 @@ $ pip3 install pytorchts
 ```
 
 ## Quick start
+
+Here we highlight the the API changes via the GluonTS README.
 
 ```python
 import matplotlib.pyplot as plt
